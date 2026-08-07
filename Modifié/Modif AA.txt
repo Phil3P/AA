@@ -1,0 +1,65 @@
+
+| Fichier                            | Modification                                               | Rôle                                           |
+| ---------------------------------- | ---------------------------------------------------------- | ---------------------------------------------- |
+| **Début du fichier**               | Intercepteur `fetch` pour capturer `__rt_balances`         | Récupère les vraies balances GraphQL           |
+| **`Yji`**                          | Fallback `properties` → `assets` avec `type: 'real_token'` | Affiche les Realtokens dans le portfolio       |
+| **Modal** (`decimalScale` + `min`) | Force `18` décimales pour `real_token`                     | Permet de saisir `0.01` dans le modal transfer |
+| **`QIi`**                          | Convertit `0.01` → `10000000000000000` avant `BigInt`      | Transfert fonctionnel en unités atomiques      |
+
+** Ajout en début de fichier : 
+;(function(){
+  window.__rt_balances = {};
+  var origFetch = window.fetch;
+  window.fetch = function() {
+    return origFetch.apply(this, arguments).then(function(response) {
+      var clone = response.clone();
+      clone.json().then(function(data) {
+        if (data && data.data && data.data.realTokenGnosis && data.data.realTokenGnosis.accountBalances) {
+          data.data.realTokenGnosis.accountBalances.forEach(function(b) {
+            if (b && b.token && b.token.address) {
+              window.__rt_balances[b.token.address.toLowerCase()] = b.amount;
+            }
+          });
+        }
+      }).catch(function(){});
+      return response;
+    });
+  };
+})();
+
+** Modification Yji
+Remplacer : 
+,Yji = (t, e) => {
+    const r = t.assetSearch;
+    return met(t).filter(n => n.type == CB.REALTOKEN && (e ? e.includes(n.chainId) : !0) && (r ? n.symbol.toLowerCase().includes(r.toLowerCase()) || n.name.toLowerCase().includes(r.toLowerCase()) : !0))
+}
+Par : 
+,Yji=(t,e)=>{const r=t.assetSearch;var a=met(t).filter(n=>n.type==CB.REALTOKEN&&(e?e.includes(n.chainId):!0)&&(r?n.symbol.toLowerCase().includes(r.toLowerCase())||n.name.toLowerCase().includes(r.toLowerCase()):!0));if(a.length>0)return a;var p=t.properties||[],rt=[];for(var i=0;i<p.length;i++){var o=p[i];if(!o.gnosisContract)continue;var addr=o.gnosisContract.toLowerCase();var bal=window.__rt_balances?window.__rt_balances[addr]:null;if(!bal||parseFloat(bal)<=0)continue;rt.push({name:o.fullName||o.shortName||"RealToken",symbol:o.shortName||"REAL",address:o.gnosisContract,decimals:18,logo:o.imageLink&&o.imageLink[0]?o.imageLink[0]:"",balance:bal,type:"real_token",chainId:"0x64",price:String(o.tokenPrice||0)})}return rt.filter(n=>(e?e.includes(n.chainId):!0)&&(r?n.symbol.toLowerCase().includes(r.toLowerCase())||n.name.toLowerCase().includes(r.toLowerCase()):!0))}
+
+** Modification du modal
+Remplacer :
+decimalScale: (n == null ? void 0 : n.decimals) ?? 18,
+Par : 
+decimalScale: (n != null && n.type === 'real_token') ? 18 : ((n == null ? void 0 : n.decimals) ?? 18),
+Remplacer, 3 lignes après :
+min: new Sf(1).shiftedBy(-((n == null ? void 0 : n.decimals) ?? 18)).toNumber(),
+Par : 
+min: new Sf(1).shiftedBy(-((n != null && n.type === 'real_token') ? 18 : ((n == null ? void 0 : n.decimals) ?? 18))).toNumber(),
+
+** Modifier QIi
+Remplacer : 
+function QIi(t) {
+    const e = j1({
+        abi: WIi,
+        functionName: "transfer",
+        args: [t.recipientAddress, BigInt(t.amount)]
+    });
+    return {
+        type: "onchain",
+        to: t.tokenAddress,
+        data: e,
+        value: BigInt(0)
+    }
+}
+Par : 
+function QIi(t){var a=t.amount;if(typeof a=="string"&&a.indexOf(".")!==-1){a=Math.round(parseFloat(a)*Math.pow(10,t.tokenDecimals||18)).toString()}const e=j1({abi:WIi,functionName:"transfer",args:[t.recipientAddress,BigInt(a)]});return{type:"onchain",to:t.tokenAddress,data:e,value:BigInt(0)}}
